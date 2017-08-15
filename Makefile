@@ -5,15 +5,26 @@ LIBS_DIR := ${CURDIR}/libs
 EXTERNAL_DIR := ${CURDIR}/external
 SQLCIPHER_DIR := ${CURDIR}/external/sqlcipher
 LICENSE := ${CURDIR}/SQLCIPHER_LICENSE
-SQLCIPHER_CFLAGS :=  -DHAVE_USLEEP=1 -DSQLITE_HAS_CODEC \
-	-DSQLITE_DEFAULT_JOURNAL_SIZE_LIMIT=1048576 -DSQLITE_THREADSAFE=1 -DNDEBUG=1 \
-	-DSQLITE_ENABLE_MEMORY_MANAGEMENT=1 -DSQLITE_TEMP_STORE=3 \
-	-DSQLITE_ENABLE_FTS3_BACKWARDS -DSQLITE_ENABLE_LOAD_EXTENSION \
-	-DSQLITE_ENABLE_MEMORY_MANAGEMENT -DSQLITE_ENABLE_COLUMN_METADATA \
-	-DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_UNLOCK_NOTIFY -DSQLITE_ENABLE_RTREE \
-	-DSQLITE_SOUNDEX -DSQLITE_ENABLE_STAT3 -DSQLITE_ENABLE_FTS4_UNICODE61 \
-	-DSQLITE_THREADSAFE -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_FTS3_PARENTHESIS \
-	-DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_FTS5 -DSQLCIPHER_CRYPTO_OPENSSL
+SQLCIPHER_CFLAGS :=  \
+	-DSQLITE_HAS_CODEC \
+	-DSQLITE_SOUNDEX \
+	-DHAVE_USLEEP=1 \
+	-DSQLITE_TEMP_STORE=3 \
+	-DSQLITE_THREADSAFE=1 \
+	-DSQLITE_DEFAULT_JOURNAL_SIZE_LIMIT=1048576 \
+	-DNDEBUG=1 \
+	-DSQLITE_ENABLE_MEMORY_MANAGEMENT=1 \
+	-DSQLITE_ENABLE_LOAD_EXTENSION \
+	-DSQLITE_ENABLE_COLUMN_METADATA \
+	-DSQLITE_ENABLE_UNLOCK_NOTIFY \
+	-DSQLITE_ENABLE_RTREE \
+	-DSQLITE_ENABLE_STAT3 \
+	-DSQLITE_ENABLE_STAT4 \
+	-DSQLITE_ENABLE_JSON1 \
+	-DSQLITE_ENABLE_FTS3_PARENTHESIS \
+	-DSQLITE_ENABLE_FTS4 \
+	-DSQLITE_ENABLE_FTS5 \
+	-DSQLCIPHER_CRYPTO_OPENSSL
 
 .PHONY: clean develop-zip release-zip release
 
@@ -36,10 +47,19 @@ build-amalgamation:
 build-java:
 	ant release
 
-build-native:
+build-native-32:
 	cd ${JNI_DIR} && \
-	ndk-build V=1 --environment-overrides NDK_LIBS_OUT=$(JNI_DIR)/libs \
+	ndk-build V=1 --environment-overrides NDK_LIBS_OUT=$(JNI_DIR)/libs32 \
+		NDK_APPLICATION_MK=$(JNI_DIR)/Application32.mk \
 		SQLCIPHER_CFLAGS="${SQLCIPHER_CFLAGS}"
+
+build-native-64:
+	cd ${JNI_DIR} && \
+	ndk-build V=1 --environment-overrides NDK_LIBS_OUT=$(JNI_DIR)/libs64 \
+		NDK_APPLICATION_MK=$(JNI_DIR)/Application64.mk \
+		SQLCIPHER_CFLAGS="${SQLCIPHER_CFLAGS}"
+
+build-native: build-native-32 build-native-64
 
 clean-java:
 	ant clean
@@ -47,7 +67,11 @@ clean-java:
 
 clean-ndk:
 	-cd ${JNI_DIR} && \
-	ndk-build clean
+	ndk-build clean --environment-overrides NDK_LIBS_OUT=$(JNI_DIR)/libs32 \
+		NDK_APPLICATION_MK=$(JNI_DIR)/Application32.mk  && \
+	ndk-build clean --environment-overrides NDK_LIBS_OUT=$(JNI_DIR)/libs64 \
+		NDK_APPLICATION_MK=$(JNI_DIR)/Application64.mk
+	-rm -rf ${JNI_DIR}/libs32 ${JNI_DIR}/libs64
 
 clean: clean-ndk clean-java
 	-cd ${SQLCIPHER_DIR} && \
@@ -58,7 +82,7 @@ distclean: clean
 	rm -rf ${EXTERNAL_DIR}/android-libs
 
 copy-libs:
-	cp -R ${JNI_DIR}/libs/* ${LIBS_DIR}
+	-cp -R ${JNI_DIR}/libs32/* ${JNI_DIR}/libs64/* ${LIBS_DIR}
 
 release-aar:
 	-rm ${LIBS_DIR}/sqlcipher.jar

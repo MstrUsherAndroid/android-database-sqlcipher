@@ -31,14 +31,17 @@
 #include <wchar.h>
 #include <stdlib.h>
 
+#include <stdint.h>
+#include <inttypes.h>
+
 namespace sqlcipher {
 
   static jfieldID gWindowField;
   static jfieldID gBufferField;
   static jfieldID gSizeCopiedField;
 
-#define GET_WINDOW(env, object) ((CursorWindow *)env->GetIntField(object, gWindowField))
-#define SET_WINDOW(env, object, window) (env->SetIntField(object, gWindowField, (int)window))
+#define GET_WINDOW(env, object) ((CursorWindow *)env->GetLongField(object, gWindowField))
+#define SET_WINDOW(env, object, window) (env->SetLongField(object, gWindowField,(intptr_t)window))
 #define SET_BUFFER(env, object, buf) (env->SetObjectField(object, gBufferField, buf))
 #define SET_SIZE_COPIED(env, object, size) (env->SetIntField(object, gSizeCopiedField, size))
 
@@ -169,7 +172,7 @@ namespace sqlcipher {
     uint8_t type = field.type;
     if (type == FIELD_TYPE_BLOB || type == FIELD_TYPE_STRING) {
       jbyteArray byteArray = env->NewByteArray(field.data.buffer.size);
-      LOG_ASSERT(byteArray, "Native could not create new byte[]");
+      if(byteArray == NULL) return NULL;
       env->SetByteArrayRegion(byteArray, 0, field.data.buffer.size,
                               (const jbyte*)window->offsetToPtr(field.data.buffer.offset));
       return byteArray;
@@ -649,7 +652,7 @@ namespace sqlcipher {
       LOGE("Can't find net/sqlcipher/CursorWindow");
       return -1;
     }
-    gWindowField = env->GetFieldID(clazz, "nWindow", "I");
+    gWindowField = env->GetFieldID(clazz, "nWindow", "J");
     if (gWindowField == NULL) {
       LOGE("Error locating fields");
       return -1;

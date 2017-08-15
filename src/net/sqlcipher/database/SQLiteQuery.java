@@ -32,24 +32,31 @@ public class SQLiteQuery extends SQLiteProgram {
 
     /** The index of the unbound OFFSET parameter */
     private int mOffsetIndex;
-    
+
     /** Args to bind on requery */
     private String[] mBindArgs;
-
-    private boolean mClosed = false;
+    private Object[] mObjectBindArgs;
 
     /**
      * Create a persistent query object.
-     * 
+     *
      * @param db The database that this query object is associated with
-     * @param query The SQL string for this query. 
-     * @param offsetIndex The 1-based index to the OFFSET parameter, 
+     * @param query The SQL string for this query.
+     * @param offsetIndex The 1-based index to the OFFSET parameter,
      */
     /* package */ SQLiteQuery(SQLiteDatabase db, String query, int offsetIndex, String[] bindArgs) {
         super(db, query);
 
         mOffsetIndex = offsetIndex;
         mBindArgs = bindArgs;
+    }
+
+    SQLiteQuery(SQLiteDatabase db, String query, int offsetIndex, Object[] bindArgs) {
+        super(db, query);
+        mOffsetIndex = offsetIndex;
+        mObjectBindArgs = bindArgs;
+        int length = mObjectBindArgs != null ? mObjectBindArgs.length : 0;
+        mBindArgs = new String[length];
     }
 
     /**
@@ -96,7 +103,7 @@ public class SQLiteQuery extends SQLiteProgram {
      * Get the column count for the statement. Only valid on query based
      * statements. The database must be locked
      * when calling this method.
-     * 
+     *
      * @return The number of column in the statement's result set.
      */
     /* package */ int columnCountLocked() {
@@ -111,7 +118,7 @@ public class SQLiteQuery extends SQLiteProgram {
     /**
      * Retrieves the column name for the given column index. The database must be locked
      * when calling this method.
-     * 
+     *
      * @param columnIndex the index of the column to get the name for
      * @return The requested column's name
      */
@@ -123,16 +130,10 @@ public class SQLiteQuery extends SQLiteProgram {
             releaseReference();
         }
     }
-    
+
     @Override
     public String toString() {
         return "SQLiteQuery: " + mSql;
-    }
-    
-    @Override
-    public void close() {
-        super.close();
-        mClosed = true;
     }
 
     /**
@@ -142,8 +143,12 @@ public class SQLiteQuery extends SQLiteProgram {
         if (mBindArgs != null) {
             int len = mBindArgs.length;
             try {
-                for (int i = 0; i < len; i++) {
-                    super.bindString(i + 1, mBindArgs[i]);
+                if(mObjectBindArgs != null) {
+                    bindArguments(mObjectBindArgs);
+                } else {
+                    for (int i = 0; i < len; i++) {
+                        super.bindString(i + 1, mBindArgs[i]);
+                    }
                 }
             } catch (SQLiteMisuseException e) {
                 StringBuilder errMsg = new StringBuilder("mSql " + mSql);
@@ -154,7 +159,7 @@ public class SQLiteQuery extends SQLiteProgram {
                 errMsg.append(" ");
                 IllegalStateException leakProgram = new IllegalStateException(
                         errMsg.toString(), e);
-                throw leakProgram;                
+                throw leakProgram;
             }
         }
     }
@@ -181,6 +186,33 @@ public class SQLiteQuery extends SQLiteProgram {
     public void bindString(int index, String value) {
         mBindArgs[index - 1] = value;
         if (!mClosed) super.bindString(index, value);
+    }
+
+    public void bindArguments(Object[] args){
+        if(args != null && args.length > 0){
+            for(int i = 0; i < args.length; i++){
+                Object value = args[i];
+                if(value == null){
+                    bindNull(i + 1);
+                } else if (value instanceof Double) {
+                    bindDouble(i + 1, (Double)value);
+                } else if (value instanceof Float) {
+                    float number = ((Number)value).floatValue();
+                    bindDouble(i + 1, Double.valueOf(number));
+                } else if (value instanceof Long) {
+                    bindLong(i + 1, (Long)value);
+                } else if(value instanceof Integer) {
+                    int number = ((Number) value).intValue();
+                    bindLong(i + 1, Long.valueOf(number));
+                } else if (value instanceof Boolean) {
+                    bindLong(i + 1, (Boolean)value ? 1 : 0);
+                } else if (value instanceof byte[]) {
+                    bindBlob(i + 1, (byte[])value);
+                } else {
+                    bindString(i + 1, value.toString());
+                }
+            }
+        }
     }
 
     private final native int native_fill_window(CursorWindow window, 

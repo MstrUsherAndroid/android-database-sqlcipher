@@ -9,3 +9,6 @@ bin
 libs
 gen
 *.zip
+.d
+jni/libs*
+TAGS

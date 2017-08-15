@@ -78,7 +78,7 @@ public class SQLiteDatabase extends SQLiteClosable {
   /**
    * The version number of the SQLCipher for Android Java client library.
    */
-    public static final String SQLCIPHER_ANDROID_VERSION = "3.5.4";
+    public static final String SQLCIPHER_ANDROID_VERSION = "3.5.7";
 
     // Stores reference to all databases opened in the current process.
     // (The referent Object is not used at this time.)
@@ -181,19 +181,54 @@ public class SQLiteDatabase extends SQLiteClosable {
       }
     }
 
-  /**
-   * Loads the native SQLCipher library into the application process.
-   */
+    /**
+     * Implement this interface to provide custom strategy for loading jni libraries.
+     */
+    public interface LibraryLoader {
+        /**
+         * Load jni libraries by given names.
+         * Straightforward implementation will be calling {@link System#loadLibrary(String name)}
+         * for every provided library name.
+         *
+         * @param libNames library names that sqlcipher need to load
+         */
+        void loadLibraries(String... libNames);
+    }
+
+    /**
+     * Loads the native SQLCipher library into the application process.
+     */
     public static synchronized void loadLibs (Context context) {
         loadLibs(context, context.getFilesDir());
     }
 
-  /**
-   * Loads the native SQLCipher library into the application process.
-   */
+    /**
+     * Loads the native SQLCipher library into the application process.
+     */
     public static synchronized void loadLibs (Context context, File workingDir) {
-      System.loadLibrary("sqlcipher");
-      
+        loadLibs(context, workingDir, new LibraryLoader() {
+            @Override
+            public void loadLibraries(String... libNames) {
+                for (String libName : libNames) {
+                    System.loadLibrary(libName);
+                }
+            }
+        });
+    }
+
+    /**
+     * Loads the native SQLCipher library into the application process.
+     */
+    public static synchronized void loadLibs(Context context, LibraryLoader libraryLoader) {
+        loadLibs(context, context.getFilesDir(), libraryLoader);
+    }
+
+    /**
+     * Loads the native SQLCipher library into the application process.
+     */
+    public static synchronized void loadLibs (Context context, File workingDir, LibraryLoader libraryLoader) {
+        libraryLoader.loadLibraries("sqlcipher");
+
         // System.loadLibrary("stlport_shared");
         // System.loadLibrary("sqlcipher_android");
         // System.loadLibrary("database_sqlcipher");
@@ -374,7 +409,7 @@ public class SQLiteDatabase extends SQLiteClosable {
     /* package */ static final String GET_LOCK_LOG_PREFIX = "GETLOCK:";
 
     /** Used by native code, do not rename */
-    /* package */ int mNativeHandle = 0;
+    /* package */ long mNativeHandle = 0;
 
     /** Used to make temp table names unique */
     /* package */ int mTempTableSequence = 0;
@@ -1750,6 +1785,53 @@ public class SQLiteDatabase extends SQLiteClosable {
         return rawQueryWithFactory(null, sql, selectionArgs, null);
     }
 
+
+      /**
+     * Runs the provided SQL and returns a {@link Cursor} over the result set.
+     *
+     * @param sql the SQL query. The SQL string must not be ; terminated
+     * @param args You may include ?s in where clause in the query,
+     *     which will be replaced by the values from args. The
+     *     values will be bound by their type.
+     *
+     * @return A {@link Cursor} object, which is positioned before the first entry. Note that
+     * {@link Cursor}s are not synchronized, see the documentation for more details.
+     *
+     * @throws SQLiteException if there is an issue executing the sql or the SQL string is invalid
+     * @throws IllegalStateException if the database is not open
+     */
+    public Cursor rawQuery(String sql, Object[] args) {
+        if (!isOpen()) {
+            throw new IllegalStateException("database not open");
+        }
+        long timeStart = 0;
+        if (Config.LOGV || mSlowQueryThreshold != -1) {
+            timeStart = System.currentTimeMillis();
+        }
+        SQLiteDirectCursorDriver driver = new SQLiteDirectCursorDriver(this, sql, null);
+        Cursor cursor = null;
+        try {
+            cursor = driver.query(mFactory, args);
+        } finally {
+            if (Config.LOGV || mSlowQueryThreshold != -1) {
+                // Force query execution
+                int count = -1;
+                if (cursor != null) {
+                    count = cursor.getCount();
+                }
+
+                long duration = System.currentTimeMillis() - timeStart;
+
+                if (Config.LOGV || duration >= mSlowQueryThreshold) {
+                    Log.v(TAG,
+                          "query (" + duration + " ms): " + driver.toString() +
+                          ", args are <redacted>, count is " + count);
+                }
+            }
+        }
+        return new CrossProcessCursorWrapper(cursor);
+    }
+
     /**
      * Runs the provided SQL and returns a cursor over the result set.
      *
@@ -1991,7 +2073,7 @@ public class SQLiteDatabase extends SQLiteClosable {
             // Run the program and then cleanup
             statement.execute();
 
-            long insertedRowId = lastInsertRow();
+            long insertedRowId = lastChangeCount() > 0 ? lastInsertRow() : -1;
             if (insertedRowId == -1) {
                 Log.e(TAG, "Error inserting <redacted values> using <redacted sql> into " + table);
             } else {
@@ -2414,7 +2496,7 @@ public class SQLiteDatabase extends SQLiteClosable {
   }
 
     private String getTime() {
-        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS ").format(System.currentTimeMillis());
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS ", Locale.US).format(System.currentTimeMillis());
     }
 
     /**
